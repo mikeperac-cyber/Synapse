@@ -1,0 +1,254 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./omnisphere.db"
+}
+
+// Universal Tag Model
+model Tag {
+  id         String      @id @default(cuid())
+  name       String      @unique
+  color      String      @default("#0F766E") // default teal
+  createdAt  DateTime    @default(now())
+  entityTags EntityTag[]
+}
+
+// Polymorphic entity tags
+model EntityTag {
+  id         String   @id @default(cuid())
+  tagId      String
+  tag        Tag      @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  entityType String   // "TASK" | "PROJECT" | "STUDENT" | "LESSON" | "FINANCE" | "NOTE" | "REPO" | "POST" | "MEMO"
+  entityId   String
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+}
+
+// Universal cross-entity bidirectional relationships
+model EntityRelation {
+  id           String   @id @default(cuid())
+  fromType     String   // e.g. "STUDENT"
+  fromId       String
+  toType       String   // e.g. "LESSON", "PROJECT", "TASK"
+  toId         String
+  relationType String   // "BLOCKS" | "PARENT_OF" | "GENERATED_FROM" | "RELATED_TO"
+  createdAt    DateTime @default(now())
+
+  @@index([fromType, fromId])
+  @@index([toType, toId])
+}
+
+// Projects
+model Project {
+  id            String         @id @default(cuid())
+  title         String
+  description   String?
+  stage         String         @default("BUILD") // "IDEATION" | "BUILD" | "TRACK"
+  velocityScore Float          @default(85.0)
+  healthScore   Float          @default(92.0)
+  targetDate    DateTime?
+  budget        Float          @default(0.0)
+  hourlyRate    Float          @default(85.0) // default hourly billing rate
+  markdownDoc   String?        // Ideation canvas & mindmap markdown
+  tasks         Task[]
+  timeLogs      TimeLog[]
+  financeItems  FinancialRecord[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+}
+
+// Tasks & Todos
+model Task {
+  id               String      @id @default(cuid())
+  title            String
+  description      String?
+  status           String      @default("TODO") // "TODO" | "IN_PROGRESS" | "DONE" | "CLARIFY_OR_DISCARD"
+  priority         String      @default("MEDIUM") // "LOW" | "MEDIUM" | "HIGH" | "URGENT"
+  dueDate          DateTime?
+  estimatedMinutes Int         @default(30)
+  trackedMinutes   Int         @default(0)
+  isStale          Boolean     @default(false)
+  projectId        String?
+  project          Project?    @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  studentId        String?
+  student          Student?    @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  timeLogs         TimeLog[]
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+}
+
+// Time Logs
+model TimeLog {
+  id              String   @id @default(cuid())
+  taskId          String
+  task            Task     @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  projectId       String?
+  project         Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  startTime       DateTime @default(now())
+  endTime         DateTime?
+  durationMinutes Int      @default(0)
+  billableAmount  Float    @default(0.0)
+  note            String?
+  createdAt       DateTime @default(now())
+}
+
+// Realistic Goals (S.M.A.R.T. audit)
+model Goal {
+  id                 String    @id @default(cuid())
+  title              String
+  targetCategory     String    // "DEVELOPMENT" | "BUSINESS" | "ACADEMY" | "HEALTH"
+  targetHoursPerWeek Float     @default(10.0)
+  targetDate         DateTime?
+  smartSpecific      String?
+  smartMeasurable    String?
+  smartAchievable    String?
+  smartRelevant      String?
+  smartTimeBound     String?
+  realismStatus      String    @default("REALISTIC") // "REALISTIC" | "OVERCAPACITY" | "UNDERUTILIZED"
+  rationale          String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+// Students
+model Student {
+  id              String            @id @default(cuid())
+  name            String
+  email           String            @unique
+  phone           String?
+  level           String            @default("Intermediate") // "Beginner" | "Intermediate" | "Advanced" | "C1 Preparation"
+  targetExamDate  DateTime?
+  ratePerHour     Float             @default(65.0)
+  status          String            @default("ACTIVE") // "ACTIVE" | "INACTIVE"
+  diagnosticNotes String?
+  lessons         Lesson[]
+  homeworks       Homework[]
+  tasks           Task[]
+  financeRecords  FinancialRecord[]
+  createdAt       DateTime          @default(now())
+  updatedAt       DateTime          @updatedAt
+}
+
+// Lessons
+model Lesson {
+  id              String     @id @default(cuid())
+  studentId       String
+  student         Student    @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  title           String
+  scheduledAt     DateTime
+  durationMinutes Int        @default(60)
+  status          String     @default("SCHEDULED") // "SCHEDULED" | "COMPLETED" | "CANCELLED"
+  objectives      String?
+  vocabDrillJson  String?    // JSON array of drills/vocab pairs
+  feeAmount       Float      @default(65.0)
+  isPaid          Boolean    @default(false)
+  homeworks       Homework[]
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+}
+
+// Homework
+model Homework {
+  id               String   @id @default(cuid())
+  studentId        String
+  student          Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  lessonId         String?
+  lesson           Lesson?  @relation(fields: [lessonId], references: [id], onDelete: SetNull)
+  title            String
+  description      String?
+  assignedDate     DateTime @default(now())
+  dueDate          DateTime
+  status           String   @default("ASSIGNED") // "ASSIGNED" | "SUBMITTED" | "GRADED" | "OVERDUE"
+  score            Float?
+  weakSpotCategory String?  // e.g. "Past Perfect", "Inversion", "Listening"
+  reminderQueued   Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
+// Financial Records & Cash Flow Matrix
+model FinancialRecord {
+  id          String   @id @default(cuid())
+  type        String   // "INCOME" | "EXPENSE" | "DEBT"
+  category    String   // "STUDENT_LESSON", "CLIENT_CONTRACT", "SOFTWARE_TOOL", "SERVER", "STUDENT_LOAN", "CREDIT_CARD"
+  description String
+  amount      Float
+  dueDate     DateTime?
+  isRecurring Boolean  @default(false)
+  aprRate     Float?   // Annual Percentage Rate for debts
+  isPaid      Boolean  @default(false)
+  studentId   String?
+  student     Student? @relation(fields: [studentId], references: [id], onDelete: SetNull)
+  projectId   String?
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// Voice Memos
+model VoiceMemo {
+  id                 String   @id @default(cuid())
+  title              String
+  audioUrl           String?  // Data URI / local blob path
+  durationSeconds    Int      @default(0)
+  transcription      String
+  actionItemsJson    String?  // Extracted tasks in JSON array
+  clusteredTagsJson  String?  // Inferred tag names
+  createdAt          DateTime @default(now())
+}
+
+// Notes & Backlinks
+model Note {
+  id            String   @id @default(cuid())
+  title         String
+  content       String   // Rich markdown with [[Entity]] references
+  backlinksJson String?  // Cached parsed links
+  pinned        Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+// Instagram Content Engine
+model InstagramPost {
+  id                     String    @id @default(cuid())
+  hook                   String
+  body                   String
+  cta                    String
+  visualAssetListJson    String?   // checklist JSON array
+  audioTrack             String?
+  status                 String    @default("DRAFT") // "DRAFT" | "SCHEDULED" | "PUBLISHED"
+  scheduledFor           DateTime?
+  hashtagClusterJson     String?   // JSON array with tags & weights
+  charCount              Int       @default(0)
+  estScore               Float     @default(82.0)
+  studentAcquisitionGoal String?
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+}
+
+// Repository Bundles
+model RepoBundle {
+  id                      String   @id @default(cuid())
+  name                    String
+  repoUrlsJson            String   // JSON array of URLs or repo paths
+  directoryStructureJson  String?  // JSON tree
+  fileCount               Int      @default(0)
+  totalSize               Int      @default(0) // bytes
+  tokenEstimate           Int      @default(0)
+  outputFormat            String   @default("ZIP") // "ZIP" | "XML_PROMPT" | "MARKDOWN"
+  createdAt               DateTime @default(now())
+}
+
+// Autonomous Agent Audit Log
+model AgentActionLog {
+  id           String   @id @default(cuid())
+  timestamp    DateTime @default(now())
+  actionType   String   // "RECONCILE_LEDGER" | "STALE_TASK_AUDIT" | "HOMEWORK_NAG" | "CAPACITY_GUARDIAN"
+  description  String
+  status       String   @default("SUCCESS") // "SUCCESS" | "WARNING" | "INFO"
+  metadataJson String?
+}
